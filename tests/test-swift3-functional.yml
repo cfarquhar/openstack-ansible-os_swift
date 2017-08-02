@@ -1,0 +1,50 @@
+---
+- name: Run functional tests for swift3 middleware
+  hosts: swift_proxy[0]
+  user: root
+  gather_facts: true
+  tasks:
+
+  - name: Install prerequisite python packages
+    pip:
+      name: "{{ item }}"
+      state: present
+    with_items:
+      - s3cmd
+      - python-openstackclient
+
+  - name: Generate EC2 credentials
+    shell: |
+      . ~/openrc
+      openstack ec2 credentials create > /tmp/ec2_credentials.txt
+
+  - name: Extract EC2 access key
+    shell: awk '/access/ { print $4 }' /tmp/ec2_credentials.txt
+    register: ec2_access_key
+
+  - name: Extract EC2 secret
+    shell: awk '/secret/ { print $4 }' /tmp/ec2_credentials.txt
+    register: ec2_secret_key
+
+  - name: Set facts for .s3cfg template
+    set_fact:
+      ec2_access_key: "{{ ec2_access_key.stdout }}"
+      ec2_secret_key: "{{ ec2_secret_key.stdout }}"
+
+  - name: Generate .s3cfg
+    template:
+      src: s3cfg.j2
+      dest: /root/.s3cfg
+
+  - name: Verify we can create a bucket
+    shell: s3cmd mb s3://swift3-test
+
+  - name: Verify we can put an object
+    shell: s3cmd put /root/openrc s3://swift3-test
+
+  - name: Verify we can list the object
+    shell: s3cmd la | grep openrc
+
+  - name: Verify we can remove buckets and objects
+    shell: s3cmd -r rb s3://swift3-test
+
